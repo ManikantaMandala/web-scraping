@@ -1,0 +1,7 @@
+scrape().then((res)=>{
+    writer.write('[');
+    res.forEach((val, i, arr) => {
+        i==arr.length-1? writer.write(`${JSON.stringify(val)}\n`): writer.write(`${JSON.stringify(val)},\n`);
+    });
+    writer.write(']');
+})

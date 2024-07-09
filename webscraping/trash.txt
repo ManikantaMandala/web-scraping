@@ -1,0 +1,158 @@
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+const writer = fs.createWriteStream('USA.csv');
+writer.write(`'Country', 'Degree', 'Name', 'Uni', 'Loc', 'Duration', 'Fee', 'Lang', 'ProgDesc', 'EligCriteria', 'Career', 'DeadLine'\n`);
+var stop=false;
+const url = `https://www.gotouniversity.com/#banner-ic-2`;
+var resFinal=[];
+var courseLengthTa=0;
+var allCourses;
+let scrape = async ()=>{
+    const browser = await puppeteer.launch({
+        headless: false,
+        defaultViewport: false,
+        args:[
+            '--start-maximized', // you can also use '--start-fullscreen'
+        ]
+    });
+
+    var counterCountry =0;
+    const page = await browser.newPage();
+    await page.goto(url,{waitUntil: 'networkidle2'});
+    await page.waitForSelector('.banner-ic.ic-2');
+    await page.click('.banner-ic.ic-2');
+    await page.waitForSelector('.banner-ic.ic-16');
+    await page.click('.banner-ic.ic-16');
+    await page.waitForFunction(()=>document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[70]!=null);
+
+    do{
+        countryName = await page.evaluate(async(counterCountry)=>{
+            var btnBlue = document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[counterCountry];
+            let country = btnBlue.innerText.split('[');
+            country= country[0].trim();
+            return country;
+        },counterCountry);
+        
+        await page.evaluate(async(counterCountry)=>{
+            document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[counterCountry].click();
+        },counterCountry);
+ 
+        await page.waitForSelector('#five-step-form .step-2.home-button-grp .row>div>.btn-blue');
+        allCourses = await page.evaluate(async()=>{
+            let allCourses = document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue');
+            let tempArr = [];
+            for(let i=0; i<allCourses.length;i++){
+                tempArr.push(allCourses[i].innerText.split('[')[0].trim());
+            }
+            return tempArr;
+        });
+        var cardsPage;
+        for(let k=0; k<allCourses.length; k++){
+            if(k!=0){
+                await cardsPage.close();
+                await page.waitForTimeout(666);                
+                await page.reload({ waitUntil: ["networkidle0", "domcontentloaded"] });
+                await page.waitForSelector('.banner-ic.ic-2');
+                await page.click('.banner-ic.ic-2');
+                await page.waitForSelector('.banner-ic.ic-16');
+                await page.click('.banner-ic.ic-16');
+                await page.waitForFunction(()=>document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[70]!=null);
+                await page.evaluate(async(counterCountry)=>{
+                    document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[counterCountry].click();
+                },counterCountry);
+            }
+            console.log('started');
+            await page.waitForSelector('#five-step-form .step-2.home-button-grp .row>div>.btn-blue');
+            await page.evaluate(async(courseLengthTa)=>{
+                document.querySelectorAll('#five-step-form .step-2.home-button-grp .row>div>.btn-blue')[courseLengthTa].click();
+            },courseLengthTa);
+
+            await page.waitForTimeout(666);
+            const pageTarget = await page.target(); //save this to know that this was the opener
+            await page.waitForSelector('#five-step-form .step-2.home-button-grp .row>div>.btn-blue', { visible: true });
+            await page.click('#five-step-form .step-2.home-button-grp .row>div>.btn-blue');
+            const newTarget = await browser.waitForTarget(target => target.opener() === pageTarget); //check that you opened this page, rather than just checking the url
+            cardsPage = await newTarget.page(); //get the page object
+            // await newPage.once("load",()=>{}); //this doesn't work; wait till page is loaded
+            await cardsPage.waitForSelector(".panel"); //wait for page to be loaded
+           
+            var cardLen = await cardsPage.evaluate(async()=>{
+                return document.querySelectorAll('.panel').length;
+            });
+            let tempPageCount=0;
+            do{   
+                tempPageCount++;
+                console.log('@page ' + tempPageCount);
+                //for pagination ------w
+                let element = await cardsPage.$('#pagin_count>li:last-child>a');
+                let value = await cardsPage.evaluate(el => el.textContent, element);
+                //await cardsPage.waitForTimeout(666);
+                value.toUpperCase() == 'NEXT'? await cardsPage.click('#pagin_count>li:last-child>a') : stop=true;
+                //await cardsPage.waitForTimeout(666);
+                await cardsPage.waitForFunction(()=> document.querySelector('#pagin_count>li:last-child>a')!=null); 
+                for(let i=0; i<cardLen; i++){
+                    var coursePage;
+                    try{
+                        await cardsPage.waitForTimeout(666);
+                        const pageTarget = await cardsPage.target(); //save this to know that this was the opener
+                        await cardsPage.waitForSelector(`#expand-${i}`, { visible: true });
+                        await cardsPage.click(`#expand-${i}`);
+                        const newTarget = await browser.waitForTarget(target => target.opener() === pageTarget); //check that you opened this page, rather than just checking the url
+                         coursePage = await newTarget.page(); //get the page object
+                        // await newPage.once("load",()=>{}); //this doesn't work; wait till page is loaded
+                        await coursePage.waitForSelector("body"); //wait for page to be loaded
+                        let courseDetails = await coursePage.evaluate(async()=>{
+                            var courseName = document.querySelector('.large-text.program-name')? document.querySelector('.large-text.program-name').innerText.trim() : '';
+                            var univName = document.querySelector('.university-name')? document.querySelector('.university-name').innerText.trim(): '';
+                            var locName = document.querySelector('.location-name')? document.querySelector('.location-name').innerText.trim(): '';
+                            var duration = document.querySelector('.duration')? document.querySelector('.duration').innerText.trim(): '';
+                            var Tfees = document.querySelector('.t-fees')? document.querySelector('.t-fees').innerText.trim(): '';
+                            return [courseName, univName, locName, duration, Tfees];
+                        });
+                        let courseDetailsAll = await coursePage.evaluate(async()=>{
+                            var resArr=[];
+                            var data = document.querySelectorAll('#collapse>div>div>div');
+                            if(data.length==0){
+                                return resArr;
+                            }
+                            for(let j=0; j<5; j++){
+                            let allItems= data[j].querySelectorAll('*:not(label)');
+                            let tempTxt='';
+                            allItems.forEach((el)=>{
+                                if(el.innerText.trim().length>0){
+                                    tempTxt+=el.innerText.trim();
+                                }
+                            });
+                            resArr.push(tempTxt);
+                            }
+                            return resArr;
+                        });
+                        if(courseDetailsAll.length>3){
+                            resFinal.push(countryName, allCourses[k])
+                            resFinal=resFinal.concat(courseDetails);
+                            resFinal=resFinal.concat(courseDetailsAll);
+                            resFinal.forEach((el)=>{
+                                writer.write(`'${el}'`)
+                            });
+                            writer.write('\n');
+                        }
+                    }
+                    catch(er){
+                        continue; 
+                    }
+                    finally{
+                        await coursePage.close();
+                    }
+
+                    resFinal=[];
+                }                 
+            }while(stop==false);
+            courseLengthTa++;
+        }
+    }while(courseLengthTa==allCourses.length-1);
+    browser.close();
+    return;
+}
+scrape().then(()=>{
+    console.log('finished')
+});
